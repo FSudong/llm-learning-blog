@@ -4,6 +4,8 @@
 
 状态：open，学习时按实验/待合入 PR 看待。
 
+可视化图解：[top-k 表如何一步步变化](../../visuals/sglang-28450-moe-routing-visual.html)
+
 ## 一句话
 
 把 AMD HIP + aiter + DeepEP/MoRI MoE 路径里的 `append shared experts` 和 `DeepEP expert-id remap` 合成一个 Triton kernel，让 top-k 路由表一次写成最终布局，减少每层多个小 kernel launch。
@@ -209,4 +211,3 @@ Pattern: write-final-layout-once
 ```
 
 也就是不先生成中间布局再 remap，而是在第一个 kernel 中直接写后端需要的最终布局。
-

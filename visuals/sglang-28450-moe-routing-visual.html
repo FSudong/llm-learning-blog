@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SGLang #28450 MoE 路由可视化</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #5c687d;
+      --line: #d7dce7;
+      --blue: #2563eb;
+      --cyan: #0e7490;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --violet: #6d28d9;
+      --shadow: 0 10px 26px rgba(23, 32, 51, 0.08);
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      --sans: "Inter", "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    header {
+      background: #101827;
+      color: #fff;
+      border-bottom: 1px solid #26354d;
+    }
+
+    .wrap {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 64px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid #40506b;
+      border-radius: 8px;
+      background: #172033;
+      font-weight: 800;
+      color: #8bd3ff;
+      flex: 0 0 auto;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: #b9c4d6;
+      font-size: 13px;
+    }
+
+    .source-link {
+      color: #dce7fb;
+      border: 1px solid #40506b;
+      border-radius: 8px;
+      padding: 8px 10px;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    main {
+      padding: 26px 0 44px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+      gap: 18px;
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+
+    .section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .section.flat {
+      box-shadow: none;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      background: #f3f6fb;
+      color: #263247;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .step-tabs {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .step-btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      padding: 10px 8px;
+      cursor: pointer;
+      text-align: left;
+      min-height: 54px;
+      transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .step-btn strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .step-btn span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 3px;
+    }
+
+    .step-btn.active {
+      border-color: var(--blue);
+      background: #eef4ff;
+    }
+
+    .step-btn:hover {
+      border-color: #8aa8e8;
+      transform: translateY(-1px);
+    }
+
+    .visual-stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .board {
+      min-height: 430px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .explain-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      min-height: 430px;
+    }
+
+    .explain-box h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .explain-box p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .formula {
+      font-family: var(--mono);
+      background: #111827;
+      color: #f3f7ff;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+      overflow: auto;
+      margin: 12px 0;
+    }
+
+    .diagram-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .token {
+      display: grid;
+      place-items: center;
+      width: 72px;
+      height: 48px;
+      border-radius: 8px;
+      border: 2px solid #334155;
+      background: #e2e8f0;
+      color: #0f172a;
+      font-weight: 800;
+    }
+
+    .expert-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(60px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .expert {
+      min-height: 62px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 750;
+      position: relative;
+    }
+
+    .expert small {
+      display: block;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .expert.hot {
+      border-color: var(--blue);
+      background: #eaf1ff;
+      color: #123c9c;
+    }
+
+    .expert.shared {
+      border-color: var(--green);
+      background: #ebf8f0;
+      color: #116034;
+    }
+
+    .expert.gap {
+      border-style: dashed;
+      color: #64748b;
+      background: #f8fafc;
+    }
+
+    .table-like {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .row-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .cells {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 42px;
+      align-items: center;
+    }
+
+    .cell {
+      min-width: 54px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .cell.blue {
+      background: #eaf1ff;
+      border-color: #9db8f3;
+      color: #1746af;
+    }
+
+    .cell.green {
+      background: #ebf8f0;
+      border-color: #98d6ad;
+      color: #116034;
+    }
+
+    .cell.amber {
+      background: #fff7e8;
+      border-color: #e7c37d;
+      color: #8a4b06;
+    }
+
+    .cell.red {
+      background: #fff1f1;
+      border-color: #efa3a3;
+      color: #9d1b1b;
+    }
+
+    .arrow {
+      color: #64748b;
+      font-weight: 900;
+      font-size: 20px;
+    }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .lane {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .lane h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .pipeline {
+      display: grid;
+      gap: 8px;
+    }
+
+    .pipe-step {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fbfcff;
+    }
+
+    .pipe-num {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: #334155;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .kernel-tag {
+      font-size: 11px;
+      font-weight: 800;
+      color: #fff;
+      background: var(--red);
+      border-radius: 999px;
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+
+    .kernel-tag.good {
+      background: var(--green);
+    }
+
+    .mini-title {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-weight: 800;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .code-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    pre {
+      margin: 0;
+      background: #111827;
+      color: #eef6ff;
+      border-radius: 8px;
+      padding: 14px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      tab-size: 2;
+    }
+
+    .callout {
+      border-left: 4px solid var(--blue);
+      background: #eef4ff;
+      padding: 12px 14px;
+      border-radius: 0 8px 8px 0;
+      color: #1e376d;
+      margin-top: 12px;
+    }
+
+    .callout strong {
+      color: #123c9c;
+    }
+
+    .rank-layout {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .rank {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .rank h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: -1px;
+    }
+
+    .dot.blue {
+      background: var(--blue);
+    }
+
+    .dot.green {
+      background: var(--green);
+    }
+
+    .dot.red {
+      background: var(--red);
+    }
+
+    .memory-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .memory {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .memory strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 6px;
+      letter-spacing: 0;
+    }
+
+    .memory p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    @media (max-width: 960px) {
+      .hero-grid,
+      .visual-stage,
+      .compare-grid,
+      .code-grid,
+      .rank-layout,
+      .memory-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .step-tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .board,
+      .explain-box {
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        width: min(100vw - 20px, 1180px);
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 12px 0;
+      }
+
+      .source-link {
+        width: 100%;
+        text-align: center;
+      }
+
+      .step-tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .expert-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .table-row {
+        grid-template-columns: 1fr;
+      }
+
+      .brand h1 {
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="brand-mark">MoE</div>
+        <div>
+          <h1>SGLang #28450 可视化：top-k 表一次写成最终形态</h1>
+          <p>append shared expert + DeepEP remap + padding mask</p>
+        </div>
+      </div>
+      <a class="source-link" href="https://github.com/sgl-project/sglang/pull/28450">GitHub PR #28450</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="hero-grid">
+        <div class="section">
+          <h2 class="section-title">先记住这一个例子</h2>
+          <p class="lede">一个 token 先被 router 选中两个普通专家，再追加一个 shared expert。DeepEP 需要的是多 GPU 后端能读懂的 physical expert id，所以还要 remap。</p>
+          <div class="table-like">
+            <div class="table-row">
+              <div class="row-label">原始 top-k</div>
+              <div class="cells">
+                <div class="cell blue">E2</div>
+                <div class="cell blue">E5</div>
+              </div>
+            </div>
+            <div class="table-row">
+              <div class="row-label">append shared</div>
+              <div class="cells">
+                <div class="cell blue">E2</div>
+                <div class="cell blue">E5</div>
+                <div class="cell green">S</div>
+              </div>
+            </div>
+            <div class="table-row">
+              <div class="row-label">DeepEP remap</div>
+              <div class="cells">
+                <div class="cell amber">P3</div>
+                <div class="cell amber">P7</div>
+                <div class="cell green">P8</div>
+              </div>
+            </div>
+          </div>
+          <div class="callout"><strong>核心：</strong>旧代码先生成中间表再改表；新 PR 在一个 Triton kernel 里直接写最终表。</div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">三个词</h2>
+          <div class="memory-strip" style="grid-template-columns:1fr;">
+            <div class="memory">
+              <strong>shared expert</strong>
+              <p>每个 token 都会额外走的公共专家，像给 top-k 表再加一列。</p>
+            </div>
+            <div class="memory">
+              <strong>DeepEP remap</strong>
+              <p>把 logical expert id 翻译成多 GPU dispatch 后端需要的 physical id。</p>
+            </div>
+            <div class="memory">
+              <strong>padding mask</strong>
+              <p>固定 shape 里有假 token，假 token 的 expert weight 要变成 0。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">一步一步看数据怎么变</h2>
+        <div class="step-tabs" role="tablist" aria-label="MoE routing steps">
+          <button class="step-btn active" data-step="0"><strong>1. Router</strong><span>给专家打分</span></button>
+          <button class="step-btn" data-step="1"><strong>2. Top-k</strong><span>只保留 E2/E5</span></button>
+          <button class="step-btn" data-step="2"><strong>3. Append</strong><span>追加 shared</span></button>
+          <button class="step-btn" data-step="3"><strong>4. Remap</strong><span>变成 physical id</span></button>
+          <button class="step-btn" data-step="4"><strong>5. Padding</strong><span>假 token 归零</span></button>
+          <button class="step-btn" data-step="5"><strong>6. Fused</strong><span>一次写最终表</span></button>
+        </div>
+
+        <div class="visual-stage">
+          <div class="board" id="board"></div>
+          <aside class="explain-box" id="explain"></aside>
+        </div>
+      </section>
+
+      <section class="section" style="margin-top:18px;">
+        <h2 class="section-title">旧路径 vs 新路径</h2>
+        <div class="compare-grid">
+          <div class="lane">
+            <h3>旧路径：表被改好几次</h3>
+            <div class="pipeline">
+              <div class="pipe-step"><span class="pipe-num">1</span><span>append shared expert</span><span class="kernel-tag">1 launch</span></div>
+              <div class="pipe-step"><span class="pipe-num">2</span><span>arange 造 shared index</span><span class="kernel-tag">small</span></div>
+              <div class="pipe-step"><span class="pipe-num">3</span><span>floor-div: e // local</span><span class="kernel-tag">small</span></div>
+              <div class="pipe-step"><span class="pipe-num">4</span><span>add: e + gap</span><span class="kernel-tag">small</span></div>
+              <div class="pipe-step"><span class="pipe-num">5</span><span>fill/copy 写回 top-k 表</span><span class="kernel-tag">small</span></div>
+              <div class="pipe-step"><span class="pipe-num">6</span><span>padding mask</span><span class="kernel-tag">small</span></div>
+            </div>
+          </div>
+
+          <div class="lane">
+            <h3>新路径：一个 kernel 写最终答案</h3>
+            <div class="pipeline">
+              <div class="pipe-step"><span class="pipe-num">1</span><span>load topk ids/weights</span><span class="kernel-tag good">same launch</span></div>
+              <div class="pipe-step"><span class="pipe-num">2</span><span>在寄存器里算 remap</span><span class="kernel-tag good">ALU</span></div>
+              <div class="pipe-step"><span class="pipe-num">3</span><span>直接写 routed physical ids</span><span class="kernel-tag good">same launch</span></div>
+              <div class="pipe-step"><span class="pipe-num">4</span><span>直接写 shared physical ids</span><span class="kernel-tag good">same launch</span></div>
+              <div class="pipe-step"><span class="pipe-num">5</span><span>padding rows 用单 Triton kernel</span><span class="kernel-tag good">fused</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" style="margin-top:18px;">
+        <h2 class="section-title">arange 到底在干什么</h2>
+        <p class="lede">`arange` 就是生成一排编号。它本身不复杂，但在 GPU eager 模式下会变成一个独立 kernel；后面的比较和写入也常常是独立 kernel。</p>
+        <div class="compare-grid">
+          <div class="lane">
+            <p class="mini-title">代码形状</p>
+            <pre><code>indices = torch.arange(0, 8, device="cuda")
+mask = indices >= num_token_non_padded
+topk_weights[mask, :] = 0.0</code></pre>
+          </div>
+          <div class="lane">
+            <p class="mini-title">数据形状</p>
+            <div class="table-like">
+              <div class="table-row">
+                <div class="row-label">indices</div>
+                <div class="cells">
+                  <span class="cell">0</span><span class="cell">1</span><span class="cell">2</span><span class="cell">3</span>
+                  <span class="cell">4</span><span class="cell">5</span><span class="cell">6</span><span class="cell">7</span>
+                </div>
+              </div>
+              <div class="table-row">
+                <div class="row-label">mask</div>
+                <div class="cells">
+                  <span class="cell">F</span><span class="cell">F</span><span class="cell">F</span><span class="cell">F</span>
+                  <span class="cell red">T</span><span class="cell red">T</span><span class="cell red">T</span><span class="cell red">T</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="callout"><strong>为什么手写 Triton：</strong>PyTorch eager 看到的是三四个通用张量操作；PR 作者知道业务语义是“第 4 行之后全部填 0”，所以能写成一个专用 kernel。</div>
+      </section>
+
+      <section class="section" style="margin-top:18px;">
+        <h2 class="section-title">DeepEP remap 的具体画法</h2>
+        <p class="lede">假设有 4 个普通 routed experts，2 张 GPU，每张 GPU 有 2 个 routed experts 和 1 个 shared expert。DeepEP physical layout 会在每个 rank 的 routed block 后面留 shared slot。</p>
+
+        <div class="rank-layout">
+          <div class="rank">
+            <h4>Rank 0 physical ids</h4>
+            <div class="cells">
+              <span class="cell blue">P0=E0</span>
+              <span class="cell blue">P1=E1</span>
+              <span class="cell green">P2=S0</span>
+            </div>
+          </div>
+          <div class="rank">
+            <h4>Rank 1 physical ids</h4>
+            <div class="cells">
+              <span class="cell blue">P3=E2</span>
+              <span class="cell blue">P4=E3</span>
+              <span class="cell green">P5=S1</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="formula">num_local_routed = 2
+E0 -> 0 + 0//2 = P0
+E1 -> 1 + 1//2 = P1
+E2 -> 2 + 2//2 = P3
+E3 -> 3 + 3//2 = P4</div>
+      </section>
+
+      <section class="section" style="margin-top:18px;">
+        <h2 class="section-title">为什么从 device memory 读取真实 token 数</h2>
+        <div class="compare-grid">
+          <div class="lane">
+            <h3>不适合 graph capture</h3>
+            <div class="diagram-row">
+              <span class="cell blue">GPU scalar</span>
+              <span class="arrow">-></span>
+              <span class="cell red">CPU .item()</span>
+              <span class="arrow">-></span>
+              <span class="cell red">同步等待</span>
+            </div>
+            <p class="lede">CPU 每步都读 GPU 上的 `num_token_non_padded`，会破坏高性能 serving 想要的固定 replay 流程。</p>
+          </div>
+          <div class="lane">
+            <h3>适合 graph capture</h3>
+            <div class="diagram-row">
+              <span class="cell blue">固定 kernel</span>
+              <span class="arrow">-></span>
+              <span class="cell green">tl.load(scalar)</span>
+              <span class="arrow">-></span>
+              <span class="cell green">内部判断</span>
+            </div>
+            <p class="lede">kernel 每次 replay 都一样，只是 GPU memory 里的 scalar 值变了。形状固定，行为动态。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" style="margin-top:18px;">
+        <h2 class="section-title">结合代码看最小逻辑</h2>
+        <div class="code-grid">
+          <div>
+            <p class="mini-title">旧 padding mask</p>
+            <pre><code>indices = torch.arange(0, rows, device=x.device)
+x[indices >= num_token_non_padded, :] = 0.0</code></pre>
+          </div>
+          <div>
+            <p class="mini-title">新 padding mask</p>
+            <pre><code>row = tl.program_id(0)
+n_valid = tl.load(num_token_non_padded_ptr)
+if row >= n_valid:
+    x[row, :] = fill_value</code></pre>
+          </div>
+          <div>
+            <p class="mini-title">旧 append + remap</p>
+            <pre><code>topk = append_shared(topk)
+topk = remap_for_deepep(topk)</code></pre>
+          </div>
+          <div>
+            <p class="mini-title">新 fused kernel</p>
+            <pre><code>ids = load(topk_ids[row])
+ids = ids + ids // num_local_routed
+store(out_ids[row, :K], ids)
+store(out_ids[row, K:], shared_id_base + s)</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" style="margin-top:18px;">
+        <h2 class="section-title">最后只背这张卡</h2>
+        <div class="memory-strip">
+          <div class="memory">
+            <strong>MoE 做什么</strong>
+            <p>router 给所有专家打分，但真正 MLP 只跑 top-k，再额外跑 shared expert。</p>
+          </div>
+          <div class="memory">
+            <strong>PR 改什么</strong>
+            <p>把 append shared expert 和 DeepEP remap 从多步改表，变成一次写最终表。</p>
+          </div>
+          <div class="memory">
+            <strong>为什么快</strong>
+            <p>少了很多小 GPU kernel launch，decode 阶段每层都少做固定开销。</p>
+          </div>
+        </div>
+      </section>
+
+      <p class="footer">本页对应本地笔记：01-pr-notes/2026-06/sglang-28450-fused-append-remap-deepep.md</p>
+    </div>
+  </main>
+
+  <script>
+    const steps = [
+      {
+        title: "Router：先给所有专家打分",
+        text: "router 不是跑所有专家的 MLP。它只是给专家打分，然后选出 top-k。真正贵的是后面的 expert MLP。",
+        formula: "scores = router(hidden)\ntopk_ids = topk(scores, k=2)",
+        board: "router"
+      },
+      {
+        title: "Top-k：只留下 E2 和 E5",
+        text: "这个例子里 token T0 选中了 E2 和 E5。topk_weights 表示两个专家输出最后混合时的权重。",
+        formula: "topk_ids     = [2, 5]\ntopk_weights = [0.62, 0.38]",
+        board: "topk"
+      },
+      {
+        title: "Append：追加 shared expert",
+        text: "shared expert 是每个 token 都会走的公共专家。为了复用 MoE 后端，它被追加到 top-k 表后面。",
+        formula: "[2, 5] -> [2, 5, S]\n[0.62, 0.38] -> [0.62, 0.38, 1.0]",
+        board: "append"
+      },
+      {
+        title: "DeepEP remap：logical id 变 physical id",
+        text: "DeepEP/MoRI 是多 GPU expert dispatch 后端。它需要知道 expert 在哪张 GPU、哪个 physical slot 上。",
+        formula: "physical = e + e // num_local_routed\nshared = shared_id_base + s",
+        board: "remap"
+      },
+      {
+        title: "Padding：假 token 的权重变 0",
+        text: "为了固定 shape，batch 里可能有 padding token。它们不能影响输出，所以把这些 row 的 expert weight 置 0。",
+        formula: "if row >= num_token_non_padded:\n    topk_weights[row, :] = 0",
+        board: "padding"
+      },
+      {
+        title: "Fused：一次写最终表",
+        text: "PR 的关键是：不再 append 一次、remap 一次、再 copy/fill 一次，而是在一个 Triton kernel 中直接写最终结果。",
+        formula: "load ids/weights\nremap routed ids\nappend shared ids\nstore final table",
+        board: "fused"
+      }
+    ];
+
+    const board = document.getElementById("board");
+    const explain = document.getElementById("explain");
+    const buttons = Array.from(document.querySelectorAll(".step-btn"));
+
+    function cell(value, cls = "") {
+      return `<span class="cell ${cls}">${value}</span>`;
+    }
+
+    function experts(active = []) {
+      const items = [];
+      for (let i = 0; i < 6; i++) {
+        const hot = active.includes(i) ? "hot" : "";
+        items.push(`<div class="expert ${hot}">E${i}<small>expert ${i}</small></div>`);
+      }
+      return `<div class="expert-grid">${items.join("")}</div>`;
+    }
+
+    function table(rows) {
+      return `<div class="table-like">${rows.map(([label, values]) => `
+        <div class="table-row">
+          <div class="row-label">${label}</div>
+          <div class="cells">${values}</div>
+        </div>
+      `).join("")}</div>`;
+    }
+
+    function rankPicture() {
+      return `
+        <div class="rank-layout">
+          <div class="rank">
+            <h4>Rank 0</h4>
+            <div class="cells">${cell("P0=E0","blue")}${cell("P1=E1","blue")}${cell("P2=S0","green")}</div>
+          </div>
+          <div class="rank">
+            <h4>Rank 1</h4>
+            <div class="cells">${cell("P3=E2","blue")}${cell("P4=E3","blue")}${cell("P5=S1","green")}</div>
+          </div>
+        </div>`;
+    }
+
+    function renderBoard(kind) {
+      if (kind === "router") {
+        return `
+          <p class="mini-title">专家打分</p>
+          <div class="diagram-row"><div class="token">T0</div><span class="arrow">-></span><span>router scores</span></div>
+          ${experts([])}
+          ${table([
+            ["scores", cell("0.05") + cell("0.12") + cell("0.91","blue") + cell("0.20") + cell("0.07") + cell("0.74","blue")]
+          ])}
+          <div class="legend"><span><i class="dot blue"></i>分数最高的两个专家</span></div>`;
+      }
+
+      if (kind === "topk") {
+        return `
+          <p class="mini-title">top-k 结果</p>
+          ${experts([2, 5])}
+          ${table([
+            ["topk_ids", cell("2","blue") + cell("5","blue")],
+            ["topk_weights", cell("0.62","blue") + cell("0.38","blue")]
+          ])}`;
+      }
+
+      if (kind === "append") {
+        return `
+          <p class="mini-title">追加 shared expert</p>
+          ${table([
+            ["before ids", cell("2","blue") + cell("5","blue")],
+            ["after ids", cell("2","blue") + cell("5","blue") + cell("S","green")],
+            ["after weights", cell("0.62","blue") + cell("0.38","blue") + cell("1.0","green")]
+          ])}
+          <div class="diagram-row"><span class="cell blue">普通专家</span><span class="arrow">+</span><span class="cell green">shared expert</span></div>`;
+      }
+
+      if (kind === "remap") {
+        return `
+          <p class="mini-title">logical id 到 physical id</p>
+          ${rankPicture()}
+          ${table([
+            ["logical ids", cell("E2","blue") + cell("E5","blue") + cell("S","green")],
+            ["physical ids", cell("P3","amber") + cell("P7","amber") + cell("P8","green")]
+          ])}`;
+      }
+
+      if (kind === "padding") {
+        return `
+          <p class="mini-title">固定 6 行，但只有前 4 行是真 token</p>
+          ${table([
+            ["row id", cell("0") + cell("1") + cell("2") + cell("3") + cell("4","red") + cell("5","red")],
+            ["valid?", cell("Y","blue") + cell("Y","blue") + cell("Y","blue") + cell("Y","blue") + cell("N","red") + cell("N","red")],
+            ["weight", cell("keep","blue") + cell("keep","blue") + cell("keep","blue") + cell("keep","blue") + cell("0","red") + cell("0","red")]
+          ])}
+          <div class="formula">num_token_non_padded = 4</div>`;
+      }
+
+      return `
+        <p class="mini-title">旧：多步改表，新：一次写最终表</p>
+        <div class="compare-grid">
+          <div class="lane">
+            <h3>旧</h3>
+            ${table([
+              ["step 1", cell("[2,5]","blue")],
+              ["step 2", cell("[2,5,S]","green")],
+              ["step 3", cell("[P3,P7,P8]","amber")]
+            ])}
+          </div>
+          <div class="lane">
+            <h3>新</h3>
+            ${table([
+              ["one kernel", cell("[P3,P7,P8]","green")]
+            ])}
+          </div>
+        </div>`;
+    }
+
+    function setStep(idx) {
+      buttons.forEach((btn, i) => btn.classList.toggle("active", i === idx));
+      const step = steps[idx];
+      board.innerHTML = renderBoard(step.board);
+      explain.innerHTML = `
+        <h3>${step.title}</h3>
+        <p>${step.text}</p>
+        <div class="formula">${step.formula}</div>
+        <div class="callout"><strong>本步记忆：</strong>${idx === 5 ? "生成中间表再修改，变成直接生成最终表。" : step.title.split("：")[0]}</div>
+      `;
+    }
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => setStep(Number(btn.dataset.step)));
+    });
+
+    setStep(0);
+  </script>
+</body>
+</html>
+

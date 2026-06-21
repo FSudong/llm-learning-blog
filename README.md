@@ -8,6 +8,7 @@
 
 - [MoE 推理加速知识拓扑](00-knowledge-map/moe-inference-acceleration-topology.md)
 - [2026-06 PR 精读索引](01-pr-notes/2026-06/README.md)
+- [SGLang #28450 可视化图解](visuals/sglang-28450-moe-routing-visual.html)
 - [MoE 优化模式库](02-patterns/moe-optimization-patterns.md)
 - [PR 源码阅读模板](03-code-reading/pr-reading-template.md)
 - [把 MoE 优化迁移到其他模型的 checklist](04-model-porting/moe-porting-checklist.md)
@@ -47,4 +48,3 @@ sources/               原始链接、版本信息、外部资料索引
 SGLang #28450 属于第一块：让 top-k 路由表一次变成 DeepEP 最终布局，减少小 kernel launch。
 
 vLLM #44667 属于第三块：让 NVFP4 MoE 权重边反量化边参与 GEMM，避免完整 BF16 中间权重落到 HBM。
-
