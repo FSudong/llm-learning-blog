@@ -5,6 +5,7 @@
 - [SGLang #28450: Fuse shared-expert append + DeepEP remap](sglang-28450-fused-append-remap-deepep.md)
   - [可视化图解：top-k 表如何一步步变化](../../visuals/sglang-28450-moe-routing-visual.html)
 - [vLLM #44667: Fuse NVFP4 dequantization with MoE compute](vllm-44667-nvfp4-moe-fused-dequant.md)
+  - [可视化图解：NVFP4 权重如何边解边乘](../../visuals/vllm-44667-nvfp4-moe-fused-dequant.html)
 
 ## 当前主题
 

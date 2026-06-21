@@ -9,6 +9,7 @@
 - [MoE 推理加速知识拓扑](00-knowledge-map/moe-inference-acceleration-topology.md)
 - [2026-06 PR 精读索引](01-pr-notes/2026-06/README.md)
 - [SGLang #28450 可视化图解](visuals/sglang-28450-moe-routing-visual.html)
+- [vLLM #44667 可视化图解](visuals/vllm-44667-nvfp4-moe-fused-dequant.html)
 - [MoE 优化模式库](02-patterns/moe-optimization-patterns.md)
 - [PR 源码阅读模板](03-code-reading/pr-reading-template.md)
 - [把 MoE 优化迁移到其他模型的 checklist](04-model-porting/moe-porting-checklist.md)

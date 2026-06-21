@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vLLM #44667 NVFP4 MoE 可视化</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --paper: #ffffff;
+      --ink: #182033;
+      --muted: #5c687b;
+      --line: #d9deea;
+      --blue: #2563eb;
+      --cyan: #0e7490;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --violet: #6d28d9;
+      --slate: #334155;
+      --shadow: 0 10px 26px rgba(24, 32, 51, 0.08);
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      --sans: "Inter", "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    header {
+      background: #101827;
+      color: #fff;
+      border-bottom: 1px solid #26354d;
+    }
+
+    .wrap {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 66px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid #40506b;
+      border-radius: 8px;
+      background: #172033;
+      font-weight: 900;
+      color: #a7f3d0;
+      flex: 0 0 auto;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: #b9c4d6;
+      font-size: 13px;
+    }
+
+    .source-link {
+      color: #dce7fb;
+      border: 1px solid #40506b;
+      border-radius: 8px;
+      padding: 8px 10px;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    main {
+      padding: 26px 0 44px;
+    }
+
+    .section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .memory-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .memory {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .memory strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 6px;
+      letter-spacing: 0;
+    }
+
+    .memory p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .step-tabs {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .step-btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      padding: 10px 8px;
+      cursor: pointer;
+      text-align: left;
+      min-height: 58px;
+      transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .step-btn strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .step-btn span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 3px;
+    }
+
+    .step-btn.active {
+      border-color: var(--green);
+      background: #edf9f1;
+    }
+
+    .step-btn:hover {
+      border-color: #8fcfa6;
+      transform: translateY(-1px);
+    }
+
+    .visual-stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 292px;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .board {
+      min-height: 460px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .explain-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      min-height: 460px;
+    }
+
+    .explain-box h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .explain-box p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .formula {
+      font-family: var(--mono);
+      background: #111827;
+      color: #f3f7ff;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+      overflow: auto;
+      margin: 12px 0;
+      white-space: pre-wrap;
+    }
+
+    .compare-grid,
+    .code-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .lane {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .lane h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .pipe {
+      display: grid;
+      gap: 8px;
+    }
+
+    .pipe-step {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fbfcff;
+    }
+
+    .pipe-num {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: #334155;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .tag {
+      font-size: 11px;
+      font-weight: 850;
+      color: #fff;
+      background: var(--red);
+      border-radius: 999px;
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+
+    .tag.good {
+      background: var(--green);
+    }
+
+    .tag.warn {
+      background: var(--amber);
+    }
+
+    .cells {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 42px;
+      align-items: center;
+    }
+
+    .cell {
+      min-width: 54px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 800;
+      padding: 0 8px;
+    }
+
+    .cell.blue {
+      background: #eaf1ff;
+      border-color: #9db8f3;
+      color: #1746af;
+    }
+
+    .cell.green {
+      background: #ebf8f0;
+      border-color: #98d6ad;
+      color: #116034;
+    }
+
+    .cell.amber {
+      background: #fff7e8;
+      border-color: #e7c37d;
+      color: #8a4b06;
+    }
+
+    .cell.red {
+      background: #fff1f1;
+      border-color: #efa3a3;
+      color: #9d1b1b;
+    }
+
+    .cell.violet {
+      background: #f3edff;
+      border-color: #c7b2f2;
+      color: #5a23ad;
+    }
+
+    .table-like {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: 116px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .row-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .arrow {
+      color: #64748b;
+      font-weight: 900;
+      font-size: 20px;
+    }
+
+    .expert-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(86px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .expert {
+      min-height: 78px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 850;
+      padding: 8px;
+    }
+
+    .expert small {
+      display: block;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .expert.hit {
+      border-color: var(--green);
+      background: #ebf8f0;
+      color: #116034;
+    }
+
+    .expert.waste {
+      border-color: #efa3a3;
+      background: #fff1f1;
+      color: #9d1b1b;
+    }
+
+    .byte {
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      min-width: 112px;
+      height: 42px;
+      border: 2px solid var(--slate);
+      border-radius: 8px;
+      overflow: hidden;
+      font-family: var(--mono);
+      font-weight: 900;
+      margin: 4px;
+    }
+
+    .nibble {
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 12px;
+    }
+
+    .nibble.low {
+      background: var(--blue);
+    }
+
+    .nibble.high {
+      background: var(--violet);
+    }
+
+    .matrix {
+      display: inline-grid;
+      grid-template-columns: repeat(4, 36px);
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      vertical-align: middle;
+    }
+
+    .mcell {
+      width: 36px;
+      height: 28px;
+      border-radius: 6px;
+      background: #e2e8f0;
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #334155;
+      font-weight: 800;
+    }
+
+    .mcell.hot {
+      background: #dff7e7;
+      color: #116034;
+    }
+
+    .mcell.fp4 {
+      background: #ede9fe;
+      color: #5a23ad;
+    }
+
+    .diagram-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .callout {
+      border-left: 4px solid var(--green);
+      background: #edf9f1;
+      padding: 12px 14px;
+      border-radius: 0 8px 8px 0;
+      color: #1f5130;
+      margin-top: 12px;
+    }
+
+    .callout strong {
+      color: #116034;
+    }
+
+    .mini-title {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-weight: 850;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    pre {
+      margin: 0;
+      background: #111827;
+      color: #eef6ff;
+      border-radius: 8px;
+      padding: 14px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      tab-size: 2;
+    }
+
+    .speed-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .speed-table th,
+    .speed-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+
+    .speed-table th {
+      background: #f3f6fb;
+      color: #334155;
+    }
+
+    .speed-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    @media (max-width: 960px) {
+      .hero-grid,
+      .visual-stage,
+      .compare-grid,
+      .code-grid,
+      .memory-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .step-tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .board,
+      .explain-box {
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        width: min(100vw - 20px, 1180px);
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 12px 0;
+      }
+
+      .source-link {
+        width: 100%;
+        text-align: center;
+      }
+
+      .step-tabs,
+      .expert-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .table-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="brand-mark">FP4</div>
+        <div>
+          <h1>vLLM #44667 可视化：NVFP4 MoE 权重边解边乘</h1>
+          <p>packed byte -> nibble -> scale -> tl.dot，不整包解压</p>
+        </div>
+      </div>
+      <a class="source-link" href="https://github.com/vllm-project/vllm/pull/44667">GitHub PR #44667</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="hero-grid section">
+        <div>
+          <h2 class="section-title">先记住这一个矛盾</h2>
+          <p class="lede">MoE 很稀疏：当前 token 只命中少数 experts。但旧路径会先把所有 expert 的 NVFP4 权重都解压成 BF16 大 tensor，然后再做 GEMM。</p>
+          <div class="expert-grid">
+            <div class="expert waste">E0<small>未命中，也被解压</small></div>
+            <div class="expert hit">E1<small>命中，需要计算</small></div>
+            <div class="expert waste">E2<small>未命中，也被解压</small></div>
+            <div class="expert hit">E3<small>命中，需要计算</small></div>
+          </div>
+          <div class="callout"><strong>核心：</strong>新 PR 不再整包解压所有 expert，而是在 GEMM tile 内只解当前命中的 expert tile。</div>
+        </div>
+        <div>
+          <h2 class="section-title">三个词</h2>
+          <div class="memory-strip" style="grid-template-columns:1fr;">
+            <div class="memory">
+              <strong>packed NVFP4</strong>
+              <p>一个 uint8 byte 里塞两个 4-bit 权重值：low nibble 和 high nibble。</p>
+            </div>
+            <div class="memory">
+              <strong>inline dequant</strong>
+              <p>不生成完整 BF16 权重，只在 kernel tile 内临时解码。</p>
+            </div>
+            <div class="memory">
+              <strong>tl.dot</strong>
+              <p>解码和缩放后的 tile 立刻进入矩阵乘，不写回 HBM。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">一步一步看：一个 byte 怎么变成 GEMM 的权重</h2>
+        <div class="step-tabs" role="tablist" aria-label="NVFP4 MoE fused dequant steps">
+          <button class="step-btn active" data-step="0"><strong>1. MoE 稀疏</strong><span>只命中 E1/E3</span></button>
+          <button class="step-btn" data-step="1"><strong>2. packed byte</strong><span>一个 byte 两个 FP4</span></button>
+          <button class="step-btn" data-step="2"><strong>3. 拆 nibble</strong><span>low/high</span></button>
+          <button class="step-btn" data-step="3"><strong>4. decode+scale</strong><span>E2M1 和 scale</span></button>
+          <button class="step-btn" data-step="4"><strong>5. interleave</strong><span>还原 K 维 tile</span></button>
+          <button class="step-btn" data-step="5"><strong>6. tl.dot</strong><span>立即矩阵乘</span></button>
+        </div>
+
+        <div class="visual-stage">
+          <div class="board" id="board"></div>
+          <aside class="explain-box" id="explain"></aside>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">旧路径 vs 新路径</h2>
+        <div class="compare-grid">
+          <div class="lane">
+            <h3>旧路径：先整包解压</h3>
+            <div class="pipe">
+              <div class="pipe-step"><span class="pipe-num">1</span><span>读取所有 experts 的 packed NVFP4 权重</span><span class="tag">全量</span></div>
+              <div class="pipe-step"><span class="pipe-num">2</span><span>dequantize_to_dtype 生成 BF16 权重</span><span class="tag">HBM 写</span></div>
+              <div class="pipe-step"><span class="pipe-num">3</span><span>TritonExperts.apply 再读取 BF16 权重</span><span class="tag">HBM 读</span></div>
+              <div class="pipe-step"><span class="pipe-num">4</span><span>只对命中的 experts 做 GEMM</span><span class="tag warn">稀疏性来晚了</span></div>
+            </div>
+          </div>
+          <div class="lane">
+            <h3>新路径：边解边乘</h3>
+            <div class="pipe">
+              <div class="pipe-step"><span class="pipe-num">1</span><span>moe_align_block_size 找到命中 expert block</span><span class="tag good">只命中</span></div>
+              <div class="pipe-step"><span class="pipe-num">2</span><span>load 当前 expert 的 packed weight tile</span><span class="tag good">tile</span></div>
+              <div class="pipe-step"><span class="pipe-num">3</span><span>拆 nibble、decode、scale</span><span class="tag good">kernel 内</span></div>
+              <div class="pipe-step"><span class="pipe-num">4</span><span>直接 tl.dot，不生成完整 BF16 权重</span><span class="tag good">少 HBM</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">结合代码看最小逻辑</h2>
+        <div class="code-grid">
+          <div>
+            <p class="mini-title">旧：先完整反量化</p>
+            <pre><code>w1_dequant = dequantize_to_dtype(
+    tensor_fp4=w1,
+    tensor_sf=w1_scale,
+    global_scale=w1_global_scale,
+    dtype=hidden_states.dtype,
+)
+
+super().apply(
+    hidden_states=hidden_states,
+    w1=w1_dequant,
+    w2=w2_dequant,
+)</code></pre>
+          </div>
+          <div>
+            <p class="mini-title">新：kernel 内边解边 dot</p>
+            <pre><code>raw_bytes = tl.load(b_ptrs)
+
+low_nibble = raw_bytes & 0x0F
+high_nibble = (raw_bytes >> 4) & 0x0F
+
+low = _e2m1_inline(low_nibble)
+high = _e2m1_inline(high_nibble)
+
+scale = block_scale * global_scale
+b = tl.trans(tl.interleave(low * scale, high * scale))
+accumulator = tl.dot(a, b, acc=accumulator)</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">为什么小 batch / decode 特别赚</h2>
+        <div class="compare-grid">
+          <div class="lane">
+            <h3>旧路径的固定成本</h3>
+            <p class="lede">即使只有 1 个 token，旧路径也可能先把整层 MoE 的 packed 权重解压出大块 BF16 中间 tensor。</p>
+            <div class="diagram-row">
+              <span class="cell red">E0</span>
+              <span class="cell green">E1</span>
+              <span class="cell red">E2</span>
+              <span class="cell green">E3</span>
+              <span class="arrow">-></span>
+              <span class="cell red">BF16 大 tensor</span>
+            </div>
+          </div>
+          <div class="lane">
+            <h3>新路径的按需成本</h3>
+            <p class="lede">当前 batch 命中哪些 expert，就只解这些 expert 当前 GEMM tile 需要的 byte。</p>
+            <div class="diagram-row">
+              <span class="cell green">E1 tile</span>
+              <span class="cell green">E3 tile</span>
+              <span class="arrow">-></span>
+              <span class="cell green">tl.dot</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">PR 给出的效果</h2>
+        <p class="lede">下面是 PR 描述里的 Kimi-K2.6-NVFP4 TP=8 MoE forward microbench。注意这是 MoE forward/kernel 级收益，不等于整服务端端到端 10x。</p>
+        <table class="speed-table">
+          <thead>
+            <tr>
+              <th>tokens</th>
+              <th>unfused</th>
+              <th>fused</th>
+              <th>speedup</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>1.843 ms</td>
+              <td>0.171 ms</td>
+              <td>10.80x</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>1.850 ms</td>
+              <td>0.176 ms</td>
+              <td>10.51x</td>
+            </tr>
+            <tr>
+              <td>16</td>
+              <td>2.053 ms</td>
+              <td>0.274 ms</td>
+              <td>7.48x</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">最后只背这张卡</h2>
+        <div class="memory-strip">
+          <div class="memory">
+            <strong>旧路径</strong>
+            <p>FP4 权重先全部解压成 BF16 大 tensor，再让 MoE GEMM 读取。</p>
+          </div>
+          <div class="memory">
+            <strong>新路径</strong>
+            <p>只读取命中 expert 的 packed tile，在 kernel 内拆 nibble、decode、scale。</p>
+          </div>
+          <div class="memory">
+            <strong>为什么快</strong>
+            <p>不把完整 dequantized weight 写入 HBM，少全量工作，稀疏性更早生效。</p>
+          </div>
+        </div>
+      </section>
+
+      <p class="footer">本页对应本地笔记：01-pr-notes/2026-06/vllm-44667-nvfp4-moe-fused-dequant.md</p>
+    </div>
+  </main>
+
+  <script>
+    const steps = [
+      {
+        title: "MoE 稀疏：只命中少数 expert",
+        text: "这个例子里有 4 个 experts，但当前 token 只命中 E1 和 E3。旧路径的问题是：E0/E2 没命中，也可能被提前解压。",
+        formula: "topk_ids = [1, 3]\n只有 E1/E3 需要做 expert MLP",
+        board: "sparse"
+      },
+      {
+        title: "packed byte：一个 byte 放两个 FP4",
+        text: "NVFP4 权重不是一个 float 一个 float 存，而是压缩存储。一个 uint8 里面有 low 4 bits 和 high 4 bits。",
+        formula: "raw_byte = 0b1011_0010\nlow  nibble = 0010\nhigh nibble = 1011",
+        board: "byte"
+      },
+      {
+        title: "拆 nibble：拿出两个 4-bit 值",
+        text: "kernel 用位运算把一个 byte 拆成两个值。low 用 & 0x0F，high 用右移 4 位再 & 0x0F。",
+        formula: "low  = raw_bytes & 0x0F\nhigh = (raw_bytes >> 4) & 0x0F",
+        board: "nibble"
+      },
+      {
+        title: "decode + scale：恢复可计算权重",
+        text: "4-bit 值本身还不是最终权重。需要 E2M1 decode，再乘 block scale 和 expert global scale。",
+        formula: "w_float = e2m1_decode(nibble)\n        * block_scale\n        * global_scale",
+        board: "scale"
+      },
+      {
+        title: "interleave：还原 K 维顺序",
+        text: "low/high 两半来自同一个 byte，分别对应 K 维相邻两个元素。interleave 把它们交错还原成 GEMM 要的 K 维 tile。",
+        formula: "low_scaled:  [k0, k2, k4]\nhigh_scaled: [k1, k3, k5]\ninterleave -> [k0, k1, k2, k3, k4, k5]",
+        board: "interleave"
+      },
+      {
+        title: "tl.dot：解完立刻乘",
+        text: "最关键是：解码后的 tile 不写回全局内存，不形成完整 BF16 权重 tensor，而是直接进入 tl.dot。",
+        formula: "b = trans(interleave(low_scaled, high_scaled))\naccumulator = tl.dot(a, b)",
+        board: "dot"
+      }
+    ];
+
+    const board = document.getElementById("board");
+    const explain = document.getElementById("explain");
+    const buttons = Array.from(document.querySelectorAll(".step-btn"));
+
+    function cell(value, cls = "") {
+      return `<span class="cell ${cls}">${value}</span>`;
+    }
+
+    function table(rows) {
+      return `<div class="table-like">${rows.map(([label, values]) => `
+        <div class="table-row">
+          <div class="row-label">${label}</div>
+          <div class="cells">${values}</div>
+        </div>
+      `).join("")}</div>`;
+    }
+
+    function byteView(low = "0010", high = "1011") {
+      return `<span class="byte"><span class="nibble high">high ${high}</span><span class="nibble low">low ${low}</span></span>`;
+    }
+
+    function matrix(cls = "fp4") {
+      const vals = ["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"];
+      return `<span class="matrix">${vals.map((v, i) => `<span class="mcell ${i < 4 ? cls : ""}">${v}</span>`).join("")}</span>`;
+    }
+
+    function renderBoard(kind) {
+      if (kind === "sparse") {
+        return `
+          <p class="mini-title">MoE 当前只命中 E1/E3</p>
+          <div class="expert-grid">
+            <div class="expert waste">E0<small>未命中</small></div>
+            <div class="expert hit">E1<small>命中</small></div>
+            <div class="expert waste">E2<small>未命中</small></div>
+            <div class="expert hit">E3<small>命中</small></div>
+          </div>
+          ${table([
+            ["topk_ids", cell("1", "green") + cell("3", "green")],
+            ["旧路径", cell("E0", "red") + cell("E1", "green") + cell("E2", "red") + cell("E3", "green")],
+            ["新路径", cell("E1 tile", "green") + cell("E3 tile", "green")]
+          ])}`;
+      }
+
+      if (kind === "byte") {
+        return `
+          <p class="mini-title">packed NVFP4 byte</p>
+          <div class="diagram-row">${byteView()}<span class="arrow">=</span><span class="cell violet">uint8</span></div>
+          ${table([
+            ["high 4 bits", cell("1011", "violet")],
+            ["low 4 bits", cell("0010", "blue")]
+          ])}
+          <div class="callout"><strong>注意：</strong>一个 byte 里有两个权重元素，所以读取一个 byte 可以产出两个 K 维元素。</div>`;
+      }
+
+      if (kind === "nibble") {
+        return `
+          <p class="mini-title">位运算拆开</p>
+          <div class="diagram-row">${byteView()}<span class="arrow">-></span>${cell("low", "blue")}${cell("high", "violet")}</div>
+          ${table([
+            ["raw", cell("0b10110010", "amber")],
+            ["low", cell("raw & 0x0F", "blue") + cell("0010", "blue")],
+            ["high", cell("(raw >> 4) & 0x0F", "violet") + cell("1011", "violet")]
+          ])}`;
+      }
+
+      if (kind === "scale") {
+        return `
+          <p class="mini-title">从 4-bit 值恢复权重</p>
+          <div class="diagram-row">
+            ${cell("nibble", "blue")}<span class="arrow">-></span>${cell("E2M1", "violet")}<span class="arrow">x</span>${cell("block scale", "amber")}<span class="arrow">x</span>${cell("global scale", "green")}
+          </div>
+          ${table([
+            ["decode", cell("e2m1(nibble)", "violet")],
+            ["scale", cell("block_scale", "amber") + cell("global_scale", "green")],
+            ["result", cell("weight float", "green")]
+          ])}`;
+      }
+
+      if (kind === "interleave") {
+        return `
+          <p class="mini-title">low/high 交错回 K 维</p>
+          ${table([
+            ["low_scaled", cell("k0", "blue") + cell("k2", "blue") + cell("k4", "blue")],
+            ["high_scaled", cell("k1", "violet") + cell("k3", "violet") + cell("k5", "violet")],
+            ["interleave", cell("k0", "green") + cell("k1", "green") + cell("k2", "green") + cell("k3", "green") + cell("k4", "green") + cell("k5", "green")]
+          ])}
+          <div class="diagram-row">${matrix("fp4")}<span class="arrow">-></span><span class="cell green">[K, N] tile</span></div>`;
+      }
+
+      return `
+        <p class="mini-title">tile 直接进入 tl.dot</p>
+        <div class="diagram-row">
+          <span class="cell blue">A tile</span>
+          <span class="arrow">x</span>
+          <span class="cell green">decoded B tile</span>
+          <span class="arrow">-></span>
+          <span class="cell amber">accumulator</span>
+        </div>
+        ${table([
+          ["旧", cell("FP4", "violet") + cell("BF16 global tensor", "red") + cell("GEMM", "amber")],
+          ["新", cell("FP4 tile", "violet") + cell("decode in kernel", "green") + cell("tl.dot", "green")]
+        ])}`;
+    }
+
+    function setStep(idx) {
+      buttons.forEach((btn, i) => btn.classList.toggle("active", i === idx));
+      const step = steps[idx];
+      board.innerHTML = renderBoard(step.board);
+      explain.innerHTML = `
+        <h3>${step.title}</h3>
+        <p>${step.text}</p>
+        <div class="formula">${step.formula}</div>
+        <div class="callout"><strong>本步记忆：</strong>${idx === 5 ? "不写完整 BF16 权重，解完马上 dot。" : step.title.split("：")[0]}</div>
+      `;
+    }
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => setStep(Number(btn.dataset.step)));
+    });
+
+    setStep(0);
+  </script>
+</body>
+</html>
+

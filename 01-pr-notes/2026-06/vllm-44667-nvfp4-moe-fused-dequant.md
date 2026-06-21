@@ -4,6 +4,8 @@
 
 状态：open，学习时按实验/待合入 PR 看待。
 
+可视化图解：[NVFP4 权重如何边解边乘](../../visuals/vllm-44667-nvfp4-moe-fused-dequant.html)
+
 ## 一句话
 
 把 NVFP4 MoE 权重的反量化放进 Triton MoE GEMM tile 内部，命中哪个 expert 就只解哪个 expert 的当前 tile，避免把所有 expert 权重完整反量化成 BF16 大 tensor。
@@ -254,4 +256,3 @@ Pattern: inline-dequant-into-gemm
 ```
 
 也就是把“量化权重 -> 反量化大 tensor -> GEMM”改成“量化权重 tile -> kernel 内反量化 -> 立即 GEMM”。
-
