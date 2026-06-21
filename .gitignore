@@ -1,0 +1,14 @@
+# Local scratch
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# Python/editor noise
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.idea/
+.vscode/
+
