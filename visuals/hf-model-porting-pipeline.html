@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HF 模型接入推理框架可视化</title>
+  <link rel="stylesheet" href="pr-visual.css">
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="mark">HF</div>
+        <div>
+          <h1>从 Hugging Face 模型到 vLLM / SGLang / TensorRT-LLM</h1>
+          <p>一步白一步：config、registry、模型代码、权重映射、测试</p>
+        </div>
+      </div>
+      <a class="source-link" href="../05-model-onboarding/hf-to-vllm-sglang-trtllm-step-by-step.md">返回教程</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="section">
+        <h2>第一张图：HF 模型包不是可直接执行的高性能 serving 模型</h2>
+        <div class="diagram">
+          <span class="box blue">config.json</span>
+          <span class="box blue">tokenizer</span>
+          <span class="box blue">safetensors</span>
+          <span class="box blue">chat template</span>
+          <span class="arrow">-></span>
+          <span class="box amber">框架识别</span>
+          <span class="arrow">-></span>
+          <span class="box green">高性能 runtime</span>
+        </div>
+        <div class="callout">核心：权重只是原材料。框架还要知道 forward 怎么走、权重怎么映射、KV cache 怎么管、并行怎么切。</div>
+      </section>
+
+      <section class="section">
+        <h2>第二张图：先判断要不要写代码</h2>
+        <div class="flow">
+          <div class="step"><span class="num">1</span><span>打开 <code>config.json</code>，看 <code>architectures</code></span><span class="tag blue">入口</span></div>
+          <div class="step"><span class="num">2</span><span>architecture 已在框架 registry 里？</span><span class="tag green">直接跑</span></div>
+          <div class="step"><span class="num">3</span><span>结构相同但名字不同？</span><span class="tag teal">注册 alias</span></div>
+          <div class="step"><span class="num">4</span><span>结构相似但有小差异？</span><span class="tag amber">复制最近模型改</span></div>
+          <div class="step"><span class="num">5</span><span>新 attention / MoE / VLM / quant？</span><span class="tag red">实现新模型和测试</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>第三张图：vLLM 链路</h2>
+        <div class="diagram">
+          <span class="box blue">architectures</span>
+          <span class="arrow">-></span>
+          <span class="box violet">ModelRegistry</span>
+          <span class="arrow">-></span>
+          <span class="box amber">models/my_model.py</span>
+          <span class="arrow">-></span>
+          <span class="box green">forward + compute_logits + sample</span>
+          <span class="arrow">-></span>
+          <span class="box teal">load_weights</span>
+        </div>
+        <div class="grid-3">
+          <div class="memory"><strong>内置上游</strong><span>放进 <code>vllm/model_executor/models</code>，改 <code>registry.py</code>。</span></div>
+          <div class="memory"><strong>外部实验</strong><span>用 plugin 调 <code>ModelRegistry.register_model</code>。</span></div>
+          <div class="memory"><strong>最常见坑</strong><span>QKV/gate_up fused 权重映射、prefix、TP/PP。</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>第四张图：SGLang 链路</h2>
+        <div class="diagram">
+          <span class="box blue">architectures</span>
+          <span class="arrow">-></span>
+          <span class="box violet">扫描 srt/models</span>
+          <span class="arrow">-></span>
+          <span class="box amber">EntryClass</span>
+          <span class="arrow">-></span>
+          <span class="box green">RadixAttention + ForwardBatch</span>
+          <span class="arrow">-></span>
+          <span class="box teal">LogitsProcessor</span>
+        </div>
+        <div class="grid-3">
+          <div class="memory"><strong>注册方式</strong><span>模型文件末尾写 <code>EntryClass = MyModel</code>。</span></div>
+          <div class="memory"><strong>vLLM port 差异</strong><span>Attention 换 RadixAttention，forward 带 <code>forward_batch</code>。</span></div>
+          <div class="memory"><strong>测试</strong><span>先 HF reference，再 <code>sglang.bench_one_batch --correct</code>。</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>第五张图：TensorRT-LLM 链路</h2>
+        <div class="diagram">
+          <span class="box blue">HF weights</span>
+          <span class="arrow">-></span>
+          <span class="box amber">convert</span>
+          <span class="arrow">-></span>
+          <span class="box violet">TRT-LLM checkpoint</span>
+          <span class="arrow">-></span>
+          <span class="box green">trtllm-build</span>
+          <span class="arrow">-></span>
+          <span class="box teal">TensorRT engine</span>
+          <span class="arrow">-></span>
+          <span class="box green">runner / serve</span>
+        </div>
+        <div class="callout warn">TensorRT-LLM 的新模型接入更像“编译一个 engine”：除了模型定义，还要处理 checkpoint 转换和 build profile。</div>
+      </section>
+
+      <section class="section">
+        <h2>第六张图：代码骨架对比</h2>
+        <table class="table">
+          <thead>
+            <tr><th>部位</th><th>vLLM</th><th>SGLang</th><th>TensorRT-LLM</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>注册</td><td><code>ModelRegistry</code></td><td><code>EntryClass</code></td><td>模型目录 / API 注册</td></tr>
+            <tr><td>attention</td><td><code>vllm.attention.Attention</code></td><td><code>RadixAttention</code></td><td>TRT-LLM graph/plugin</td></tr>
+            <tr><td>权重</td><td>通常直接读 HF safetensors</td><td>通常直接读 HF safetensors</td><td>先 convert 成 TRT-LLM checkpoint</td></tr>
+            <tr><td>运行</td><td>Python runtime + CUDA kernels</td><td>SRT runtime + Radix/KV cache</td><td>TensorRT engine</td></tr>
+            <tr><td>新手练习</td><td>外部 wrapper plugin</td><td>外部 registry / wrapper</td><td>已支持模型的 convert/build/run</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>第七张图：上线前 checklist</h2>
+        <div class="grid-4">
+          <div class="memory"><strong>config</strong><span>architecture、heads、RoPE、MoE、quant 字段全部记录。</span></div>
+          <div class="memory"><strong>forward</strong><span>使用框架 attention、MLP、norm、logits processor。</span></div>
+          <div class="memory"><strong>weights</strong><span>QKV、gate/up、tie embedding、scale 名字映射正确。</span></div>
+          <div class="memory"><strong>tests</strong><span>tokenizer、logits、greedy output、serving、benchmark、accuracy。</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>最后只背这句话</h2>
+        <div class="callout">接入模型的主线永远是：<code>config.json -> architectures -> registry -> model file -> load_weights -> correctness</code>。MoE、量化、VLM、TensorRT engine 都是在这条链路上继续加复杂度。</div>
+      </section>
+
+      <p class="footer">本页对应：05-model-onboarding/hf-to-vllm-sglang-trtllm-step-by-step.md</p>
+    </div>
+  </main>
+</body>
+</html>

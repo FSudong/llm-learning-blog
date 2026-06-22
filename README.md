@@ -18,6 +18,8 @@
 - [MoE 优化模式库](02-patterns/moe-optimization-patterns.md)
 - [PR 源码阅读模板](03-code-reading/pr-reading-template.md)
 - [把 MoE 优化迁移到其他模型的 checklist](04-model-porting/moe-porting-checklist.md)
+- [HF 模型接入 vLLM/SGLang/TRT-LLM 学习路径](05-model-onboarding/README.md)
+- [HF 模型接入可视化图解](visuals/hf-model-porting-pipeline.html)
 - [GitHub PR 来源索引](sources/github-pr-index.md)
 
 ## 目录约定
@@ -28,6 +30,7 @@
 02-patterns/           从多个 PR 抽象出的通用优化模式
 03-code-reading/       源码阅读方法、模板、复盘格式
 04-model-porting/      把优化迁移到新模型/新硬件时的 checklist
+05-model-onboarding/   Hugging Face 模型接入推理框架的手把手教程
 sources/               原始链接、版本信息、外部资料索引
 ```
 
