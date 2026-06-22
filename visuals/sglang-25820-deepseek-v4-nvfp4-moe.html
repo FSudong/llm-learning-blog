@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SGLang #25820 DeepSeek-V4 NVFP4 MoE 图解</title>
+  <link rel="stylesheet" href="pr-visual.css">
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="mark">25820</div>
+        <div>
+          <h1>SGLang #25820：DeepSeek-V4 NVFP4 MoE 接线图</h1>
+          <p>识别 hybrid checkpoint -> 分流 FusedMoE -> FlashInfer TRTLLM routed 执行</p>
+        </div>
+      </div>
+      <a class="source-link" href="https://github.com/sgl-project/sglang/pull/25820">GitHub PR #25820</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="section">
+        <h2>先看全局：它不是一个单独 kernel，而是一条接线链路</h2>
+        <p class="lede">DeepSeek-V4 NVFP4 checkpoint 是混合量化：普通层 FP8，MoE expert NVFP4。这个 PR 的核心是让框架识别它，并让 FusedMoE 走正确的 FP4 backend。</p>
+        <div class="diagram">
+          <span class="box blue">config.json</span>
+          <span class="arrow">-></span>
+          <span class="box teal">nvfp4_moe_meta</span>
+          <span class="arrow">-></span>
+          <span class="box violet">HybridFp8NvFp4Config</span>
+          <span class="arrow">-></span>
+          <span class="box green">FusedMoE NVFP4</span>
+          <span class="arrow">-></span>
+          <span class="box amber">flashinfer_trtllm_routed</span>
+        </div>
+        <div class="callout">记忆点：普通层不换路，只有 MoE expert 被分流到 NVFP4 快路径。</div>
+      </section>
+
+      <section class="section">
+        <h2>旧理解容易错在哪里</h2>
+        <div class="grid-3">
+          <div class="card">
+            <h3>错误理解 1</h3>
+            <p>“整个模型都是 NVFP4。”实际是 mixed precision，普通层仍复用 FP8 逻辑。</p>
+          </div>
+          <div class="card">
+            <h3>错误理解 2</h3>
+            <p>“只要 loader 能读权重就行。”实际还要 quant method、runner backend、routing scale 都对齐。</p>
+          </div>
+          <div class="card">
+            <h3>错误理解 3</h3>
+            <p>“性能来自一个神秘 kernel。”实际是让 MoE expert 进入已有 FP4 routed MoE 快路径。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>代码入口地图</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>配置识别</h3>
+            <div class="flow">
+              <div class="step"><span class="num">1</span><span><code>model_config.py</code> 读取 mixed precision + NVFP4</span><span class="tag blue">detect</span></div>
+              <div class="step"><span class="num">2</span><span>抽出 <code>group_size</code> 和 <code>exclude_modules</code></span><span class="tag teal">meta</span></div>
+              <div class="step"><span class="num">3</span><span><code>loader.py</code> 构造 <code>HybridFp8NvFp4Config</code></span><span class="tag violet">wrap</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>执行分流</h3>
+            <div class="flow">
+              <div class="step"><span class="num">4</span><span><code>modelopt_quant.py</code> 判断 layer 是否 FusedMoE</span><span class="tag amber">dispatch</span></div>
+              <div class="step"><span class="num">5</span><span>FusedMoE 走 <code>ModelOptNvFp4FusedMoEMethod</code></span><span class="tag green">FP4 MoE</span></div>
+              <div class="step"><span class="num">6</span><span><code>deepseek_v4_hook.py</code> 默认选择 routed runner</span><span class="tag green">backend</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>最小代码逻辑</h2>
+        <div class="grid-2">
+          <pre><code># model_config.py
+if quant_algo == "MIXED_PRECISION" \
+   and moe_quant_algo == "NVFP4":
+    self.nvfp4_moe_meta = {
+        "group_size": int(group_size),
+        "exclude_modules": list(ignore or []),
+    }</code></pre>
+          <pre><code># modelopt_quant.py
+if isinstance(layer, FusedMoE) and not excluded:
+    return ModelOptNvFp4FusedMoEMethod(...)
+
+return super().get_quant_method(layer, prefix)</code></pre>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>两个容易漏的模型语义</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>routing scale</h3>
+            <div class="diagram">
+              <span class="box blue">topk_weights</span>
+              <span class="arrow">x</span>
+              <span class="box amber">routed_scaling_factor</span>
+              <span class="arrow">-></span>
+              <span class="box green">MoE combine</span>
+            </div>
+            <p>在 <code>hash_topk.py</code> 中补上，不然 expert 输出权重语义会错。</p>
+          </div>
+          <div class="card">
+            <h3>SwiGLU clamp</h3>
+            <div class="diagram">
+              <span class="box blue">GEMM1</span>
+              <span class="arrow">-></span>
+              <span class="box amber">clamp</span>
+              <span class="arrow">-></span>
+              <span class="box violet">SwiGLU</span>
+              <span class="arrow">-></span>
+              <span class="box green">GEMM2</span>
+            </div>
+            <p>在 FlashInfer TRTLLM FP4 MoE quant info 中传递 <code>gemm1_clamp_limit</code>。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>PR 给出的运行结果</h2>
+        <table class="table">
+          <thead><tr><th>配置</th><th>TTFT</th><th>TPOT</th><th>tokens/s/GPU</th><th>accuracy</th></tr></thead>
+          <tbody>
+            <tr><td>GB200 flash, concurrency 1</td><td>323.85 ms</td><td>3.62 ms</td><td>496</td><td>GSM8K 96.66%</td></tr>
+            <tr><td>GB200 flash, concurrency 16</td><td>397.31 ms</td><td>8.11 ms</td><td>3663</td><td>GSM8K 96.66%</td></tr>
+            <tr><td>GB300 flash, concurrency 16</td><td>422.96 ms</td><td>8.19 ms</td><td>3733</td><td>GSM8K 96.44%</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warn">这组数据说明 PR 路径可用且有文档化 benchmark；它不是一个明确 baseline-vs-new 的 speedup 表。</div>
+      </section>
+
+      <section class="section">
+        <h2>最后背这张卡</h2>
+        <div class="grid-3">
+          <div class="memory"><strong>目标</strong><span>DeepSeek-V4 mixed FP8+NVFP4 checkpoint 能被 SGLang 正确识别。</span></div>
+          <div class="memory"><strong>代码动作</strong><span>用 Hybrid config 让普通层走 FP8、FusedMoE 走 NVFP4。</span></div>
+          <div class="memory"><strong>其他模型要做</strong><span>补配置解析、权重映射、quant method、backend kernel、correctness 和 benchmark。</span></div>
+        </div>
+      </section>
+
+      <p class="footer">本页对应笔记：01-pr-notes/2026-06/sglang-25820-deepseek-v4-nvfp4-moe.md</p>
+    </div>
+  </main>
+</body>
+</html>

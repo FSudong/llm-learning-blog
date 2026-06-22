@@ -90,6 +90,24 @@ candidate: kernel 内 inline dequant + GEMM
 
 如果这些答案是 yes，vLLM #44667 类优化更可能有效。
 
+### 对 CUDA Graph 友好类优化
+
+- 是否有 `.item()`、`.cpu()`、`tolist()` 出现在 decode/forward 热路径？
+- query layout、mask、metadata 是否每轮动态变化？
+- 能否用 capture size bucket、fixed layout、padding 来表达动态 token 数？
+- custom mask 是否所有层一致，还是 alternating？
+- fallback 条件是否明确，例如 reduced vocab、custom mask、ragged layout？
+
+如果这些答案能被清楚回答，SGLang #28782 / vLLM #45232 类优化才容易安全迁移。
+
+### 对 KV layout / H2D copy 类优化
+
+- target/draft 或不同 layer 的 KV page size 是否一致？
+- 不一致时是否能用 block size 整数倍对齐？
+- 不能整除时 backend 是否支持 block-stride indexing？
+- CPU->GPU 小 metadata copy 的 source tensor 是否 pinned？
+- `non_blocking=True` 是否真的满足异步 copy 条件？
+
 ## 5. 最小实验矩阵
 
 建议至少覆盖：
@@ -144,4 +162,3 @@ accuracy / invalid output
 看到 all-to-all 或 all-reduce bubble:
   优先考虑通信融合或 overlap。
 ```
-

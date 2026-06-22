@@ -8,6 +8,11 @@
 | --- | --- | --- | --- |
 | [#28450](https://github.com/sgl-project/sglang/pull/28450) | SGLang | Fuse shared-expert append + DeepEP remap | [笔记](../01-pr-notes/2026-06/sglang-28450-fused-append-remap-deepep.md) |
 | [#44667](https://github.com/vllm-project/vllm/pull/44667) | vLLM | Fuse NVFP4 dequantization with MoE compute | [笔记](../01-pr-notes/2026-06/vllm-44667-nvfp4-moe-fused-dequant.md) |
+| [#25820](https://github.com/sgl-project/sglang/pull/25820) | SGLang | DeepSeek-V4 mixed FP8+NVFP4 MoE support | [笔记](../01-pr-notes/2026-06/sglang-25820-deepseek-v4-nvfp4-moe.md) |
+| [#28782](https://github.com/sgl-project/sglang/pull/28782) | SGLang | FlashInfer CUDA Graph for EAGLE draft-extend | [笔记](../01-pr-notes/2026-06/sglang-28782-eagle-draft-extend-flashinfer-cudagraph.md) |
+| [#45181](https://github.com/vllm-project/vllm/pull/45181) | vLLM | Mixed KV page sizes for DFlash | [笔记](../01-pr-notes/2026-06/vllm-45181-dflash-mixed-kv-page-sizes.md) |
+| [#45232](https://github.com/vllm-project/vllm/pull/45232) | vLLM | FlexAttention custom masks in full CUDA Graph | [笔记](../01-pr-notes/2026-06/vllm-45232-flexattention-custom-mask-cudagraph.md) |
+| [#45424](https://github.com/vllm-project/vllm/pull/45424) | vLLM | Pin memory before async H2D copy | [笔记](../01-pr-notes/2026-06/vllm-45424-pinned-memory-async-h2d.md) |
 
 ## 同主题后续可读
 
@@ -26,4 +31,3 @@
 2. `sources/github-pr-index.md`
 3. 如果抽象出新模式，更新 `02-patterns/moe-optimization-patterns.md`
 4. 如果影响迁移方法，更新 `04-model-porting/moe-porting-checklist.md`
-

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vLLM #45232 FlexAttention custom mask CUDA Graph 图解</title>
+  <link rel="stylesheet" href="pr-visual.css">
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="mark">45232</div>
+        <div>
+          <h1>vLLM #45232：FlexAttention custom mask 全图捕获</h1>
+          <p>custom mask 不在 forward 现场决定，而是提前进入 FlexAttention metadata</p>
+        </div>
+      </div>
+      <a class="source-link" href="https://github.com/vllm-project/vllm/pull/45232">GitHub PR #45232</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="section">
+        <h2>先认识 custom mask</h2>
+        <p class="lede">FlexAttention 的 <code>logical_mask_mod</code> 是一个函数，用 query/key 的逻辑位置判断能不能互相 attend。</p>
+        <pre><code>def windowed_causal_mask_mod(b, h, q_idx, kv_idx):
+    return (kv_idx <= q_idx) & (q_idx - kv_idx < 4)</code></pre>
+        <div class="diagram">
+          <span class="box green">kv <= q</span>
+          <span class="arrow">+</span>
+          <span class="box amber">只看最近 4 个</span>
+          <span class="arrow">=</span>
+          <span class="box blue">windowed causal mask</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>旧路径的问题：full graph 不喜欢 forward 里临时决定 mask</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>eager 路径</h3>
+            <div class="diagram">
+              <span class="box blue">forward</span>
+              <span class="arrow">-></span>
+              <span class="box amber">查 layer mask</span>
+              <span class="arrow">-></span>
+              <span class="box green">执行</span>
+            </div>
+            <p>可以每层临时查，代价是调度更动态。</p>
+          </div>
+          <div class="card">
+            <h3>full CUDA Graph</h3>
+            <div class="diagram">
+              <span class="box green">capture 一次</span>
+              <span class="arrow">-></span>
+              <span class="box green">replay 多次</span>
+              <span class="arrow">-></span>
+              <span class="box red">不想 forward 动态变</span>
+            </div>
+            <p>mask 这类控制逻辑最好提前进 metadata。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>新路径：初始化时收集，build 时写入 metadata</h2>
+        <div class="flow">
+          <div class="step"><span class="num">1</span><span><code>FlexAttentionMetadataBuilder.__init__</code></span><span class="tag blue">constructor</span></div>
+          <div class="step"><span class="num">2</span><span><code>get_layers_from_vllm_config(..., Attention, layer_names)</code></span><span class="tag teal">layers</span></div>
+          <div class="step"><span class="num">3</span><span><code>_maybe_get_custom_mask_mod</code> 检查所有层 mask 是否一致</span><span class="tag violet">check</span></div>
+          <div class="step"><span class="num">4</span><span><code>build()</code> 把 <code>logical_mask_mod</code> 和 <code>sliding_window</code> 写入 metadata</span><span class="tag green">metadata</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>为什么 alternating custom masks 先报错</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>允许</h3>
+            <div class="diagram">
+              <span class="box green">layer0 mask A</span>
+              <span class="box green">layer1 mask A</span>
+              <span class="box green">layer2 mask A</span>
+            </div>
+            <p>所有层同一个 custom mask，metadata 可以稳定表达。</p>
+          </div>
+          <div class="card">
+            <h3>拒绝</h3>
+            <div class="diagram">
+              <span class="box red">layer0 mask A</span>
+              <span class="box red">layer1 mask B</span>
+              <span class="box red">layer2 mask A</span>
+            </div>
+            <p>full graph 下任意 custom mask 交替暂不支持，PR 选择明确报错。</p>
+          </div>
+        </div>
+        <pre><code>mask_mods = {
+    getattr(layer, "logical_mask_mod", None)
+    for layer in layers.values()
+}
+if len(mask_mods) > 1:
+    raise ValueError(
+        "cannot use alternating mask mods w/ full CUDA graphs"
+    )</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>测试验证什么</h2>
+        <table class="table">
+          <thead><tr><th>测试</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>monkeypatch <code>Attention.logical_mask_mod</code></td><td>模拟模型层带 custom mask</td></tr>
+            <tr><td>eager FlexAttention</td><td>reference 输出</td></tr>
+            <tr><td>FULL cudagraph FlexAttention</td><td>新路径输出</td></tr>
+            <tr><td>compare logprobs</td><td>确认 full graph 没改错语义</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>最后背这张卡</h2>
+        <div class="grid-3">
+          <div class="memory"><strong>目标</strong><span>custom FlexAttention mask 也能使用 full CUDA Graph。</span></div>
+          <div class="memory"><strong>关键</strong><span>mask 和 sliding window 提前写进 metadata。</span></div>
+          <div class="memory"><strong>限制</strong><span>full graph 下不同层交替 custom mask 暂不支持。</span></div>
+        </div>
+      </section>
+
+      <p class="footer">本页对应笔记：01-pr-notes/2026-06/vllm-45232-flexattention-custom-mask-cudagraph.md</p>
+    </div>
+  </main>
+</body>
+</html>

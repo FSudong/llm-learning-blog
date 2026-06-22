@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vLLM #45424 pinned memory async H2D 图解</title>
+  <link rel="stylesheet" href="pr-visual.css">
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="mark">45424</div>
+        <div>
+          <h1>vLLM #45424：async H2D 之前先 pin memory</h1>
+          <p>non_blocking=True 不是魔法，CPU 源内存要满足异步传输条件</p>
+        </div>
+      </div>
+      <a class="source-link" href="https://github.com/vllm-project/vllm/pull/45424">GitHub PR #45424</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="section">
+        <h2>先看核心矛盾</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>看起来异步</h3>
+            <pre><code>torch.from_numpy(x).to(
+    device,
+    non_blocking=True,
+)</code></pre>
+            <p>但如果 CPU tensor 不是 pinned memory，底层可能仍需要同步或 staging。</p>
+          </div>
+          <div class="card">
+            <h3>更接近真异步</h3>
+            <pre><code>torch.from_numpy(x)
+    .pin_memory()
+    .to(device, non_blocking=True)</code></pre>
+            <p>CPU 源内存 page-locked 后，H2D copy 更容易和 GPU compute overlap。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>普通 CPU memory vs pinned CPU memory</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>普通 CPU memory</h3>
+            <div class="diagram">
+              <span class="box red">CPU tensor</span>
+              <span class="arrow">-></span>
+              <span class="box red">可能 staging / sync</span>
+              <span class="arrow">-></span>
+              <span class="box blue">GPU</span>
+            </div>
+            <p>操作系统可能移动或换页，GPU DMA 传输条件不稳定。</p>
+          </div>
+          <div class="card">
+            <h3>pinned memory</h3>
+            <div class="diagram">
+              <span class="box green">pinned CPU tensor</span>
+              <span class="arrow">-></span>
+              <span class="box green">async H2D</span>
+              <span class="arrow">-></span>
+              <span class="box blue">GPU</span>
+            </div>
+            <p>page-locked 内存更适合非阻塞上传。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>PR 的两类代码动作</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>局部显式 pin</h3>
+            <pre><code>gpu_buffer.copy_(
+    torch.from_numpy(req_id_per_token)
+        .pin_memory(),
+    non_blocking=True,
+)</code></pre>
+            <p>适合已有 GPU buffer，只需要把 CPU source 变成 pinned。</p>
+          </div>
+          <div class="card">
+            <h3>统一 helper</h3>
+            <pre><code>indices = async_tensor_h2d(
+    indices,
+    device=self.device,
+)</code></pre>
+            <p>把 CPU tensor 创建、pin、dtype、device、H2D copy 收敛到一个工具。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>一个容易忽略的同步点：GPU 输出长度推断</h2>
+        <p class="lede">pooling 路径里，PR 用 CPU 已知的 <code>prompt_lens_cpu.sum()</code> 显式给出 <code>output_size</code>，避免 CPU 再去等 GPU 推断长度。</p>
+        <div class="grid-2">
+          <pre><code># old: CPU 构造 segment_ids 再上传
+segment_ids = torch.repeat_interleave(
+    torch.arange(num_seqs, dtype=torch.long),
+    prompt_lens_cpu,
+).to(device, non_blocking=True)</code></pre>
+          <pre><code># new: GPU 上 repeat，但输出长度 CPU 已知
+prompt_lens = async_tensor_h2d(
+    prompt_lens_cpu,
+    device=device,
+    dtype=torch.int64,
+)
+segment_ids = torch.repeat_interleave(
+    torch.arange(num_seqs, device=device),
+    prompt_lens,
+    output_size=int(prompt_lens_cpu.sum()),
+)</code></pre>
+        </div>
+        <div class="callout">这和避免 <code>.sum().item()</code> 是同一类思想：热路径里不要让 CPU 等 GPU 回答小数字。</div>
+      </section>
+
+      <section class="section">
+        <h2>影响范围为什么很广</h2>
+        <div class="grid-4">
+          <div class="memory"><strong>attention metadata</strong><span>query_start_loc、seq_lens、doc ids 等小 tensor。</span></div>
+          <div class="memory"><strong>spec decode</strong><span>token indices、ngram proposer GPU buffer。</span></div>
+          <div class="memory"><strong>DeepSeek sparse MLA</strong><span>req_id_per_token 这类 metadata buffer。</span></div>
+          <div class="memory"><strong>structured output</strong><span>bitmask / index tensor 上传。</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>PR 没给 speedup 数字，那为什么重要？</h2>
+        <div class="flow">
+          <div class="step"><span class="num">1</span><span>vLLM decode 热路径有很多小 metadata H2D</span><span class="tag blue">频繁</span></div>
+          <div class="step"><span class="num">2</span><span>如果每次隐式同步，会削弱 graph/overlap 收益</span><span class="tag red">sync</span></div>
+          <div class="step"><span class="num">3</span><span>统一 pinned H2D，让“async”路径更可信</span><span class="tag green">cleanup</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>最后背这张卡</h2>
+        <div class="grid-3">
+          <div class="memory"><strong>目标</strong><span>避免可能的 GPU/CPU stream sync。</span></div>
+          <div class="memory"><strong>核心</strong><span>CPU -> GPU non_blocking copy 前，source tensor 要 pinned。</span></div>
+          <div class="memory"><strong>迁移</strong><span>搜 <code>.to(device, non_blocking=True)</code> 和 <code>copy_(..., non_blocking=True)</code>。</span></div>
+        </div>
+      </section>
+
+      <p class="footer">本页对应笔记：01-pr-notes/2026-06/vllm-45424-pinned-memory-async-h2d.md</p>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vLLM #45181 DFlash mixed KV page size 图解</title>
+  <link rel="stylesheet" href="pr-visual.css">
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div class="brand">
+        <div class="mark">45181</div>
+        <div>
+          <h1>vLLM #45181：DFlash 混合 KV page size</h1>
+          <p>target/draft page 不能整除时，用 physical padding + as_strided 对齐</p>
+        </div>
+      </div>
+      <a class="source-link" href="https://github.com/vllm-project/vllm/pull/45181">GitHub PR #45181</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="section">
+        <h2>先看问题：target 和 draft 的 KV page 不一样大</h2>
+        <p class="lede">DFlash speculative decoding 里，target model 和 draft model 可以有不同 KV head size。比如 target=192，draft=128，同样 block_size 下 page size 是 3:2，不是整数倍。</p>
+        <div class="diagram">
+          <span class="box blue">target KV head 192</span>
+          <span class="arrow">-></span>
+          <span class="box blue">page 192 单位</span>
+          <span class="arrow">vs</span>
+          <span class="box amber">draft KV head 128</span>
+          <span class="arrow">-></span>
+          <span class="box amber">page 128 单位</span>
+        </div>
+        <div class="callout warn">192 / 128 = 1.5，不能靠把 block_size 乘一个整数来对齐。</div>
+      </section>
+
+      <section class="section">
+        <h2>旧方案只会“整除时放大 block_size”</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>能整除：可以</h3>
+            <div class="diagram">
+              <span class="box green">小 page 512</span>
+              <span class="arrow">x2</span>
+              <span class="box green">大 page 1024</span>
+            </div>
+            <p>把小模型 block_size 乘 2，page size 就能一致。</p>
+          </div>
+          <div class="card">
+            <h3>不能整除：旧代码失败</h3>
+            <div class="diagram">
+              <span class="box red">draft 128</span>
+              <span class="arrow">x1.5?</span>
+              <span class="box red">target 192</span>
+            </div>
+            <p>block_size 不能乘 1.5，所以旧逻辑只能报错。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>新方案：逻辑 block 不变，物理 page 补空洞</h2>
+        <div class="diagram">
+          <span class="box amber">draft 有效数据 128</span>
+          <span class="box red">padding 64</span>
+          <span class="arrow">=</span>
+          <span class="box green">物理 page 192</span>
+        </div>
+        <pre><code>if max_page_size % layer_page_size == 0:
+    new_spec = replace(layer_spec, block_size=block_size * ratio)
+elif isinstance(layer_spec, AttentionSpec) \
+     and layer_spec.indexes_kv_by_block_stride:
+    new_spec = replace(layer_spec, page_size_padded=max_page_size)
+else:
+    raise NotImplementedError</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>padding 之后，kernel 怎么跳过空洞？</h2>
+        <p class="lede">关键是不能简单 <code>.view()</code>。PR 用 <code>torch.as_strided</code> 只改“下一页从哪里开始”的 stride。</p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>物理内存</h3>
+            <div class="diagram">
+              <span class="box green">block0 data</span>
+              <span class="box red">pad</span>
+              <span class="box green">block1 data</span>
+              <span class="box red">pad</span>
+            </div>
+            <p>padding 真实存在于物理 page 尾部。</p>
+          </div>
+          <div class="card">
+            <h3>逻辑 view</h3>
+            <div class="diagram">
+              <span class="box green">block0</span>
+              <span class="arrow">stride=page_size_padded</span>
+              <span class="box green">block1</span>
+            </div>
+            <p>view 看到的是有效 KV，跳页时跨过 padding。</p>
+          </div>
+        </div>
+        <pre><code>page_stride = kv_cache_spec.page_size_bytes // dtype_size
+strides = list(torch.empty(permuted_kv_cache_shape).stride())
+strides[num_blocks_dim] = page_stride
+
+kv_cache = torch.as_strided(
+    kv_raw_tensor.view(dtype),
+    size=permuted_kv_cache_shape,
+    stride=tuple(strides),
+)</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>为什么要 backend 声明支持</h2>
+        <div class="diagram">
+          <span class="box blue">AttentionBackend</span>
+          <span class="arrow">-></span>
+          <span class="box violet">indexes_kv_by_block_stride()</span>
+          <span class="arrow">-></span>
+          <span class="box green">允许 padding</span>
+        </div>
+        <div class="callout">如果 kernel 不按 block stride 找下一页，它可能会把 padding 当成 KV 数据读进去，所以必须显式 gate。</div>
+      </section>
+
+      <section class="section">
+        <h2>测试覆盖的布局</h2>
+        <table class="table">
+          <thead><tr><th>测试点</th><th>为什么重要</th></tr></thead>
+          <tbody>
+            <tr><td>target 192 / draft 128</td><td>DFlash 典型 3:2 非整数 page ratio</td></tr>
+            <tr><td>FlashAttention padded stride</td><td>验证 page stride 不是普通 contiguous stride</td></tr>
+            <tr><td>HND stride order</td><td>验证不同维度排列下 stride 仍正确</td></tr>
+            <tr><td>DiffKV / quantized KV scale</td><td>避免特殊 KV layout 被错误 view 破坏</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>最后背这张卡</h2>
+        <div class="grid-3">
+          <div class="memory"><strong>目标</strong><span>DFlash target/draft KV page size 不一致也能统一管理。</span></div>
+          <div class="memory"><strong>关键</strong><span>不能整除时设置 <code>page_size_padded</code>，不改逻辑 block_size。</span></div>
+          <div class="memory"><strong>安全条件</strong><span>backend 必须支持按 block stride 访问 KV cache。</span></div>
+        </div>
+      </section>
+
+      <p class="footer">本页对应笔记：01-pr-notes/2026-06/vllm-45181-dflash-mixed-kv-page-sizes.md</p>
+    </div>
+  </main>
+</body>
+</html>
